@@ -4,16 +4,28 @@ import time
 from PIL import Image, ImageTk
 from pynput.mouse import Controller, Button
 from pynput import keyboard
+from pynput.mouse import Listener as MouseListener
 
 # --- Global variables ---
 left_clicking = False
 right_clicking = False
 click_type = "left"  # "left" or "right"
-hotkey_start = keyboard.Key.f8
-hotkey_stop = keyboard.Key.f9
-hotkey_switch = keyboard.Key.f6
 mouse = Controller()
 listener = None
+
+# --- GUI setup ---
+root = tk.Tk()
+root.title("Autoclicker")
+root.geometry("400x300")
+root.resizable(False, False)
+
+# Hotkeys
+hotkey_start = keyboard.Key.f7
+hotkey_stop = keyboard.Key.f8
+hotkey_switch = keyboard.Key.f9
+hotkey_record_start = keyboard.Key.f10
+hotkey_record_stop = keyboard.Key.f11
+hotkey_play_recording = keyboard.Key.f12
 
 # --- Clicking functions ---
 def start_clicking():
@@ -51,6 +63,50 @@ def switch_click_type():
     global click_type
     click_type = "right" if click_type == "left" else "left"
     type_label.config(text=f"Current click: {click_type.capitalize()}")
+
+def on_move(x, y):
+    if mouse_recording:
+        mouse_events.append(('move', x, y, time.time()))
+
+def on_click(x, y, button, pressed):
+    if mouse_recording:
+        mouse_events.append(('click', x, y, str(button), pressed, time.time()))
+
+def start_mouse_recording():
+    global mouse_recording, mouse_events, mouse_listener
+    mouse_events = []
+    mouse_recording = True
+    mouse_listener = MouseListener(on_move=on_move, on_click=on_click)
+    mouse_listener.start()
+
+def stop_mouse_recording():
+    global mouse_recording, mouse_listener
+    mouse_recording = False
+    if mouse_listener:
+        mouse_listener.stop()
+        mouse_listener = None
+
+def play_mouse_recording():
+    if not mouse_events:
+        print("No mouse events recorded.")
+        return
+    start_time = mouse_events[0][3] if mouse_events[0][0] == 'move' else mouse_events[0][5]
+    for event in mouse_events:
+        if event[0] == 'move':
+            _, x, y, t = event
+            time.sleep(max(0, t - start_time))
+            mouse.position = (x, y)
+            start_time = t
+        elif event[0] == 'click':
+            _, x, y, button, pressed, t = event
+            time.sleep(max(0, t - start_time))
+            mouse.position = (x, y)
+            btn = Button.left if 'left' in button else Button.right
+            if pressed:
+                mouse.press(btn)
+            else:
+                mouse.release(btn)
+            start_time = t
 
 # --- Global hotkeys ---
 def on_press(key):
@@ -127,20 +183,30 @@ def settings():
     settings_label.image = settings_photo  
     settings_label.place(x=0, y=0, relwidth=1, relheight=1)
     
+
     # Start hotkey
     start_label = tk.Label(settings_window, text=f"Start: {temp_hotkey_start}")
-    start_label.pack(pady=5)
-    tk.Button(settings_window, text="Change Start Key", command=lambda: listen_key("start")).pack(pady=5)
+    start_label.place(x=10, y=10)
+    tk.Button(settings_window, text="Change Start Key", command=lambda: listen_key("start")).place(x=10, y=40)
 
     # Stop hotkey
     stop_label = tk.Label(settings_window, text=f"Stop: {temp_hotkey_stop}")
-    stop_label.pack(pady=5)
-    tk.Button(settings_window, text="Change Stop Key", command=lambda: listen_key("stop")).pack(pady=5)
+    stop_label.place(x=10, y=80)
+    tk.Button(settings_window, text="Change Stop Key", command=lambda: listen_key("stop")).place(x=10, y=110)
 
     # Switch hotkey
     switch_label = tk.Label(settings_window, text=f"Switch: {temp_hotkey_switch}")
-    switch_label.pack(pady=5)
-    tk.Button(settings_window, text="Change Switch Key", command=lambda: listen_key("switch")).pack(pady=5)
+    switch_label.place(x=10, y=150)
+    tk.Button(settings_window, text="Change Switch Key", command=lambda: listen_key("switch")).place(x=10, y=180)
+    
+    startrecord_label = tk.Label(settings_window, text=f"Start Recording: {hotkey_record_start}")
+    startrecord_label.place(x=270, y=10)
+
+    stoprecord_label = tk.Label(settings_window, text=f"Stop Recording: {hotkey_record_stop}")
+    stoprecord_label.place(x=270, y=80)
+
+    playrecord_label = tk.Label(settings_window, text=f"Play Recording: {hotkey_play_recording}")
+    playrecord_label.place(x=270, y=150)
 
     # Click type selection
     tk.Label(settings_window, text="Choose click type:").pack(pady=10)
@@ -151,18 +217,30 @@ def settings():
     tk.Radiobutton(settings_window, text="Left", variable=click_var, value="left", command=set_click_type).pack()
     tk.Radiobutton(settings_window, text="Right", variable=click_var, value="right", command=set_click_type).pack()
 
+    
     # Info label
     info_label = tk.Label(settings_window, text="")
     info_label.pack(pady=10)
 
-    # Save button
-    tk.Button(settings_window, text="Save changes", command=save_settings).pack(pady=10)
+    # Mouse recording buttons
+    button_record_start = tk.Button(settings_window, text="Change Start Rec", command=start_mouse_recording, width=15)
+    button_record_start.place(x=280, y=40)
 
-# --- GUI setup ---
-root = tk.Tk()
-root.title("Autoclicker")
-root.geometry("400x300")
-root.resizable(False, False)
+    button_record_stop = tk.Button(settings_window, text="Change Stop Rec", command=stop_mouse_recording, width=15)
+    button_record_stop.place(x=280, y=110)
+
+    button_play_recording = tk.Button(settings_window, text="Change Play Rec", command=play_mouse_recording, width=15)
+    button_play_recording.place(x=280, y=180)
+    
+    button_resetsettings = tk.Button(settings_window, text="Reset to Default", command=lambda: reset_settings(start_label, stop_label, switch_label, click_var), width=15)
+    button_resetsettings.place(x=140, y=320)
+
+    button_savesettings = tk.Button(settings_window, text="Save Settings", command=save_settings, width=15)
+    button_savesettings.place(x=140, y=360)
+
+
+def recording_settings():
+    pass
 
 # Background image
 background_image = Image.open("background.jpg")
@@ -197,13 +275,16 @@ def colorbuttons():
 
 # buttons
 button_start = tk.Button(root, text="Start", command=start_clicking, width=15)
-button_start.place(x=50, y=210)
+button_start.place(x=65, y=215)
 
 button_stop = tk.Button(root, text="Stop", command=stop_clicking, width=15)
-button_stop.place(x=200, y=210)
+button_stop.place(x=215, y=215)
 
 button_settings = tk.Button(root, text="Settings", command=settings, width=15)
-button_settings.place(x=125, y=255)
+button_settings.place(x=140, y=255)
+
+button_playrecording = tk.Button(root, text="Play Recording", command=play_mouse_recording, width=15)
+button_playrecording.place(x=145, y=130)
 
 colorbuttons()
 
