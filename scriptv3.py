@@ -6,6 +6,7 @@ from pynput.mouse import Controller, Button
 from pynput import keyboard
 from pynput.mouse import Listener as MouseListener
 import pyautogui
+from tkinter import filedialog
 
 # Global variables
 left_clicking = False
@@ -17,6 +18,8 @@ mouse_recording = False
 mouse_events = []
 mouse_listener = None
 settings_window_open = False
+settings_background_label = None
+settings_background_photo = None
 
 # Hotkeys
 hotkey_start = keyboard.Key.f7
@@ -26,7 +29,46 @@ hotkey_record_start = keyboard.Key.f10
 hotkey_record_stop = keyboard.Key.f11
 hotkey_play_recording = keyboard.Key.f12
 
-# licking functions
+from tkinter import filedialog
+
+def change_background():
+    global background_label, background_photo
+
+    file_path = filedialog.askopenfilename(
+        title="Выберите изображение для фона",
+        filetypes=[("Image files", "*.jpg *.png *.jpeg *.bmp *.gif")]
+    )
+    if not file_path:
+        return
+
+    try:
+        new_image = Image.open(file_path)
+        new_image = new_image.resize((450, 450), Image.Resampling.LANCZOS)
+        background_photo = ImageTk.PhotoImage(new_image)
+
+        background_label.config(image=background_photo)
+        background_label.image = background_photo
+
+        print(f"Фон успешно изменён на {file_path}")
+    except Exception as e:
+        print(f"Ошибка при смене фона: {e}")
+
+def change_settings_background(new_image_path):
+    global settings_background_label, settings_background_photo
+
+    try:
+        new_image = Image.open(new_image_path)
+        new_image = new_image.resize((485, 512), Image.Resampling.LANCZOS)
+        settings_background_photo = ImageTk.PhotoImage(new_image)
+
+        settings_background_label.config(image=settings_background_photo)
+        settings_background_label.image = settings_background_photo
+
+        print(f"Фон настроек успешно изменён на {new_image_path}")
+    except Exception as e:
+        print(f"Ошибка при смене фона настроек: {e}")
+
+# Clicking functions
 def start_clicking():
     global left_clicking, right_clicking
     if click_type == "left":
@@ -101,13 +143,15 @@ def stop_mouse_recording():
         mouse_listener.stop()
         mouse_listener = None
 
+mouse = Controller()
+
 def play_mouse_recording():
     global mouse_events
     
     if not mouse_events:
         print("No mouse events recorded.")
         return
-    
+
     try:
         user_input = entry_recordings.get()
         if user_input.lower() == 'infinity':
@@ -118,43 +162,41 @@ def play_mouse_recording():
         play_count = 1
         entry_recordings.delete(0, tk.END)
         entry_recordings.insert(0, "1")
-
-    if not mouse_events:
-        print("Список событий пуст.")
-        return
     
-    first_event = mouse_events[0]
-    initial_time = first_event[-1]
-
     count = 0
     while count < play_count:
-        playback_start_time = time.time()
+        start_time = time.time()
+        initial_event_time = mouse_events[0][-1]
 
         for event in mouse_events:
             event_type = event[0]
-            t_recorded = event[-1]
-            
-            relative_delay = t_recorded - initial_time
-            target_time = playback_start_time + relative_delay
+            event_time = event[-1]
+            delay = event_time - initial_event_time
+            target_time = start_time + delay
 
-            sleep_duration = target_time - time.time()
-            if sleep_duration > 0:
-                time.sleep(sleep_duration)
+            sleep_time = target_time - time.time()
+            if sleep_time > 0:
+                time.sleep(sleep_time)
             
             if event_type == 'move':
                 _, x, y, _ = event
-                # Используем duration=0 для мгновенного перемещения
-                pyautogui.moveTo(x, y, duration=0) 
+                mouse.position = (x, y)
             elif event_type == 'click':
                 _, x, y, button_str, pressed, _ = event
-                # Используем duration=0 для мгновенного клика
+                mouse.position = (x, y)
+
                 if 'left' in button_str:
-                    pyautogui.click(x, y, button='left', duration=0)
+                    if pressed:
+                        mouse.press(Button.left)
+                    else:
+                        mouse.release(Button.left)
                 elif 'right' in button_str:
-                    pyautogui.click(x, y, button='right', duration=0)
+                    if pressed:
+                        mouse.press(Button.right)
+                    else:
+                        mouse.release(Button.right)
         
         count += 1
-        print(f"Воспроизведение завершено: {count}/{play_count}")
 
 # Global hotkeys
 def on_press(key):
@@ -200,36 +242,37 @@ def settings():
     
     settings_window = tk.Toplevel(root)
     settings_window.title("Settings")
-    settings_window.geometry("400x400")
+    settings_window.geometry("485x485")
     settings_window.resizable(False, False)
 
+    global settings_background_label, settings_background_photo
     settings_background = Image.open("settingsbackground.jpg")
     settings_background = settings_background.resize((484, 512), Image.Resampling.LANCZOS)
-    settings_photo = ImageTk.PhotoImage(settings_background)
-    settings_label = tk.Label(settings_window, image=settings_photo)
-    settings_label.image = settings_photo  
-    settings_label.place(x=0, y=0, relwidth=1, relheight=1)
+    settings_background_photo = ImageTk.PhotoImage(settings_background)
+    settings_background_label = tk.Label(settings_window, image=settings_background_photo)
+    settings_background_label.image = settings_background_photo
+    settings_background_label.place(x=0, y=0, relwidth=1, relheight=1)
 
     info_label = tk.Label(settings_window, text="")
     info_label.pack(pady=10)
 
-    start_label = tk.Label(settings_window, text=f"Start: {temp_hotkey_start}")
+    start_label = tk.Label(settings_window, text=f"Start Clicks: {temp_hotkey_start}")
     start_label.place(x=23, y=10)
 
-    stop_label = tk.Label(settings_window, text=f"Stop: {temp_hotkey_stop}")
+    stop_label = tk.Label(settings_window, text=f"Stop Clicks: {temp_hotkey_stop}")
     stop_label.place(x=23, y=80)
 
-    switch_label = tk.Label(settings_window, text=f"Switch: {temp_hotkey_switch}")
+    switch_label = tk.Label(settings_window, text=f"Switch Clicks: {temp_hotkey_switch}")
     switch_label.place(x=23, y=150)
 
     startrecord_label = tk.Label(settings_window, text=f"Start Recording: {hotkey_record_start}")
-    startrecord_label.place(x=270, y=10)
+    startrecord_label.place(x=290, y=10)
 
     stoprecord_label = tk.Label(settings_window, text=f"Stop Recording: {hotkey_record_stop}")
-    stoprecord_label.place(x=270, y=80)
+    stoprecord_label.place(x=290, y=80)
 
     playrecord_label = tk.Label(settings_window, text=f"Play Recording: {hotkey_play_recording}")
-    playrecord_label.place(x=270, y=150)
+    playrecord_label.place(x=290, y=150)
 
     # Click type selection
     tk.Label(settings_window, text="Choose click type:").place(x=150, y=10)
@@ -257,7 +300,7 @@ def settings():
         stoprecord_label.config(text=f"Stop Recording: {temp_hotkey_record_stop}")
         playrecord_label.config(text=f"Play Recording: {temp_hotkey_record_play}")
         info_label.config(text="Settings reset to default.")
-        info_label.place(x=140, y=250)
+        info_label.place(x=155, y=240)
     
     def on_settings_close():
         global settings_window_open
@@ -322,30 +365,40 @@ def settings():
 
     
     # Mouse recording buttons
-    button_change_record_start = tk.Button(settings_window, text="Change Start Recording Key", command=lambda: listen_key("record_start"), width=20)
-    button_change_record_start.place(x=270, y=40)
+    button_change_record_start = tk.Button(settings_window, text="Change Start Recording Key", command=lambda: listen_key("record_start"), width=23)
+    button_change_record_start.place(x=290, y=40)
 
-    button_change_record_stop = tk.Button(settings_window, text="Change Stop Recording Key", command=lambda: listen_key("record_stop"), width=20)
-    button_change_record_stop.place(x=270, y=110)
+    button_change_record_stop = tk.Button(settings_window, text="Change Stop Recording Key", command=lambda: listen_key("record_stop"), width=23)
+    button_change_record_stop.place(x=290, y=110)
 
-    button_change_record_play = tk.Button(settings_window, text="Change Play Recording Key", command=lambda: listen_key("record_play"), width=20)
-    button_change_record_play.place(x=270, y=180)
-        
+    button_change_record_play = tk.Button(settings_window, text="Change Play Recording Key", command=lambda: listen_key("record_play"), width=23)
+    button_change_record_play.place(x=290, y=180)
+
     button_resetsettings = tk.Button(settings_window, text="Reset to Default", command=lambda: reset_settings(start_label, stop_label, switch_label, click_var), width=15)
-    button_resetsettings.place(x=140, y=320)
+    button_resetsettings.place(x=185, y=330)
 
     button_savesettings = tk.Button(settings_window, text="Save Settings", command=lambda: save_settings(), width=15)
-    button_savesettings.place(x=140, y=360)
-    
-    key_switch_button = tk.Button(settings_window, text="Change Switch Key", command=lambda: listen_key("switch"))
-    key_switch_button.place(x=10, y=180)     
-    
-    Change_stop_button = tk.Button(settings_window, text="Change Stop Key", command=lambda: listen_key("stop"))
+    button_savesettings.place(x=185, y=370)
+
+    key_switch_button = tk.Button(settings_window, text="Change Clicks Switch Key", command=lambda: listen_key("switch"), width=23)
+    key_switch_button.place(x=10, y=180)
+
+    Change_stop_button = tk.Button(settings_window, text="Change Clicks Stop Key", command=lambda: listen_key("stop"), width=23)
     Change_stop_button.place(x=10, y=110)
     
-    change_start_button = tk.Button(settings_window, text="Change Start Key", command=lambda: listen_key("start"))
+    change_start_button = tk.Button(settings_window, text="Change Clicks Start Key", command=lambda: listen_key("start", width=23))
     change_start_button.place(x=10, y=40)
-    
+
+    change_background_btn = tk.Button(settings_window, text="Change Background", command=change_background, width=20)
+    change_background_btn.place(x=10, y=400)
+
+    change_settings_bg_btn = tk.Button(settings_window, text="Change Setting Background", width=20,
+                                    command=lambda: change_settings_background(filedialog.askopenfilename(
+                                        title="Выберите изображение для фона настроек",
+                                        filetypes=[("Image files", "*.jpg *.png *.jpeg *.bmp *.gif")]
+                                    )))
+    change_settings_bg_btn.place(x=290, y=400)
+  
     # Hover effects for settings buttons
     def add_hover_effect(buttons):
         def on_enter(e):
@@ -401,7 +454,7 @@ def settings():
 # GUI setup
 root = tk.Tk()
 root.title("Autoclicker")
-root.geometry("400x300")
+root.geometry("450x450")
 root.resizable(False, False)
 
 # Background image
